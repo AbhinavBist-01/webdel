@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "build": "tsc",
-    "test": "vitest"
+    "test": "vitest",
+    "db:generate": "npx drizzle-kit generate",
+    "db:migrate": "npx drizzle-kit migrate",
+    "db:push": "npx drizzle-kit push"
   },
   "keywords": [
     "webhooks",
