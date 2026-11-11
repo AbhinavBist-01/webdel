@@ -2,6 +2,7 @@ import express, { type Express } from "express";
 import { customerRouter } from "./modules/customer/index.js";
 import { endpointRouter } from "./modules/endpoint/index.js";
 import { eventRouter } from "./modules/event/index.js";
+import { deliveryRouter } from "./modules/delivery/index.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 
 export function createApp(): Express {
@@ -19,6 +20,7 @@ export function createApp(): Express {
   app.use("/v1/customers", customerRouter);
   app.use("/v1/endpoints", endpointRouter);
   app.use("/v1/events", eventRouter);
+  app.use("/v1/deliveries", deliveryRouter);
 
   // Global error handler (must be registered after routes)
   app.use(errorHandler);
