@@ -3,7 +3,7 @@ import type { Server } from "node:http";
 import { eq } from "drizzle-orm";
 import { createApp } from "../src/app.js";
 import { pool, db } from "../src/db/index.js";
-import { events } from "../src/db/schema.js";
+import { events, outbox } from "../src/db/schema.js";
 
 describe("BOSS 1 FIGHT — Concurrent Event Ingestion & Idempotency", () => {
   let server: Server;
@@ -98,6 +98,15 @@ describe("BOSS 1 FIGHT — Concurrent Event Ingestion & Idempotency", () => {
     expect(rows[0]?.id).toBe(uniqueEventId);
     expect(rows[0]?.customerId).toBe(customerId);
     expect(rows[0]?.eventType).toBe("payment.created");
+
+    // 6. Verify Outbox Table: Exactly ONE outbox entry exists with status 'pending'
+    const outboxRows = await db
+      .select()
+      .from(outbox)
+      .where(eq(outbox.eventId, uniqueEventId));
+
+    expect(outboxRows).toHaveLength(1);
+    expect(outboxRows[0]?.status).toBe("pending");
   });
 
   it("should retrieve the created event via GET /v1/events/:id", async () => {
