@@ -10,7 +10,10 @@ import { dispatchWebhook } from "../services/dispatcher.js";
  * Process a webhook delivery job for a specific event:
  * Dispatches the event to all active endpoints registered for the customer.
  */
-export async function processDeliveryJob(job: Job<DeliveryJobData>): Promise<void> {
+export async function processDeliveryJob(
+  job: Job<DeliveryJobData>,
+  timeoutMs: number = 3000
+): Promise<void> {
   const { eventId } = job.data;
 
   // 1. Fetch the event
@@ -89,7 +92,7 @@ export async function processDeliveryJob(job: Job<DeliveryJobData>): Promise<voi
         data: event.payload,
         createdAt: event.createdAt,
       },
-      timeoutMs: 5000,
+      timeoutMs,
     });
 
     // 5. Record this attempt in delivery_attempts
