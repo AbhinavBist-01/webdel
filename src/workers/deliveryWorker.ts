@@ -97,11 +97,6 @@ export async function processDeliveryJob(
 
         return created!;
       });
-    } else {
-      await db
-        .update(deliveries)
-        .set({ status: "delivering" })
-        .where(eq(deliveries.id, delivery.id));
     }
 
     // 4. Head-of-Line (HoL) Blocking Check:
@@ -119,7 +114,7 @@ export async function processDeliveryJob(
       .limit(1);
 
     if (blocking) {
-      // Prior event is still processing/retrying. Defer this job to maintain strict per-endpoint ordering!
+      // Prior event for this endpoint is still in-flight. Defer this job to maintain strict per-endpoint ordering!
       await deliveryQueue.add(
         "deliver",
         { eventId: event.id, outboxId: job.data.outboxId },
@@ -127,6 +122,12 @@ export async function processDeliveryJob(
       );
       return;
     }
+
+    // Now that this delivery is at the head of the line, mark as delivering
+    await db
+      .update(deliveries)
+      .set({ status: "delivering" })
+      .where(eq(deliveries.id, delivery.id));
 
     const currentAttemptNumber = delivery.attemptCount + 1;
 

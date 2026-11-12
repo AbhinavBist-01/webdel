@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
-import { events, outbox } from "../../db/schema.js";
+import { events, outbox, endpoints, deliveries } from "../../db/schema.js";
 import { authenticateCustomer } from "../../middleware/auth.js";
 import { createEventSchema } from "./event.schema.js";
 
@@ -55,6 +55,37 @@ eventRouter.post("/", async (req: Request, res: Response) => {
       });
 
     if (inserted) {
+      // Find all active endpoints for this customer to initialize ordered deliveries
+      const activeEndpoints = await tx
+        .select()
+        .from(endpoints)
+        .where(
+          and(
+            eq(endpoints.customerId, customerId),
+            eq(endpoints.status, "active")
+          )
+        );
+
+      for (const ep of activeEndpoints) {
+        // Calculate next monotonic sequence number for this endpoint
+        const [maxRow] = await tx
+          .select({
+            maxSeq: sql<number>`COALESCE(MAX(${deliveries.sequenceNumber}), 0)`,
+          })
+          .from(deliveries)
+          .where(eq(deliveries.endpointId, ep.id));
+
+        const sequenceNumber = Number(maxRow?.maxSeq ?? 0) + 1;
+
+        await tx.insert(deliveries).values({
+          eventId: inserted.id,
+          endpointId: ep.id,
+          status: "pending",
+          sequenceNumber,
+          attemptCount: 0,
+        });
+      }
+
       // Transactional Outbox: Record pending dispatch entry in the same transaction
       await tx.insert(outbox).values({
         eventId: inserted.id,
