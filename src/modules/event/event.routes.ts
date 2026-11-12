@@ -55,18 +55,13 @@ eventRouter.post("/", async (req: Request, res: Response) => {
       });
 
     if (inserted) {
-      // Find all active endpoints for this customer to initialize ordered deliveries
-      const activeEndpoints = await tx
+      // Find all endpoints for this customer to initialize ordered deliveries
+      const customerEndpoints = await tx
         .select()
         .from(endpoints)
-        .where(
-          and(
-            eq(endpoints.customerId, customerId),
-            eq(endpoints.status, "active")
-          )
-        );
+        .where(eq(endpoints.customerId, customerId));
 
-      for (const ep of activeEndpoints) {
+      for (const ep of customerEndpoints) {
         // Calculate next monotonic sequence number for this endpoint
         const [maxRow] = await tx
           .select({
