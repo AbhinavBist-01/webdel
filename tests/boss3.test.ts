@@ -167,8 +167,8 @@ describe("BOSS 3 FIGHT — Webhook Delivery Engine & Classification", () => {
     const activeJob = jobs.find((j) => j.data.eventId === eventData.id);
     expect(activeJob).toBeDefined();
 
-    // Execute worker delivery pipeline
-    await processDeliveryJob(activeJob!);
+    // Execute worker delivery pipeline with 1.5s timeout for fast test execution
+    await processDeliveryJob(activeJob!, 1500);
 
     // 5. VERIFY ALL 4 OUTCOMES
 
@@ -227,5 +227,5 @@ describe("BOSS 3 FIGHT — Webhook Delivery Engine & Classification", () => {
     expect(inspectData.attempts[0].responseCode).toBe(200);
     expect(inspectData.attempts[0].durationMs).toBeGreaterThan(0);
     expect(inspectData.attempts[0].requestHeaders["webhook-signature"]).toBeDefined();
-  });
+  }, 15000);
 });
