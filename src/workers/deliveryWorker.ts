@@ -277,11 +277,14 @@ export async function processDeliveryJob(
 /**
  * Factory to create and start a BullMQ delivery worker.
  */
-export function createDeliveryWorker(concurrency: number = 10): Worker<DeliveryJobData> {
+export function createDeliveryWorker(
+  concurrency: number = 10,
+  retryConfig?: RetryConfig
+): Worker<DeliveryJobData> {
   const worker = new Worker<DeliveryJobData>(
     WEBHOOK_DELIVERY_QUEUE_NAME,
     async (job) => {
-      await processDeliveryJob(job);
+      await processDeliveryJob(job, 3000, retryConfig);
     },
     {
       connection: redisConnection,
