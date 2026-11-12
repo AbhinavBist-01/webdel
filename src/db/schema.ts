@@ -128,6 +128,7 @@ export const deliveries = pgTable(
       .notNull()
       .references(() => endpoints.id, { onDelete: "cascade" }),
     status: deliveryStatusEnum("status").default("pending").notNull(),
+    sequenceNumber: integer("sequence_number").default(1).notNull(),
     attemptCount: integer("attempt_count").default(0).notNull(),
     nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
     lastResponseCode: integer("last_response_code"),
@@ -139,6 +140,7 @@ export const deliveries = pgTable(
   },
   (table) => [
     index("deliveries_endpoint_status_idx").on(table.endpointId, table.status),
+    index("deliveries_endpoint_sequence_idx").on(table.endpointId, table.sequenceNumber),
     index("deliveries_status_next_attempt_idx").on(table.status, table.nextAttemptAt),
     index("deliveries_event_id_idx").on(table.eventId),
   ]

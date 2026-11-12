@@ -1,5 +1,5 @@
 import { Worker, type Job } from "bullmq";
-import { eq, and } from "drizzle-orm";
+import { eq, and, lt, inArray, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import {
   events,
@@ -74,20 +74,29 @@ export async function processDeliveryJob(
       .limit(1);
 
     if (!delivery) {
-      const [newDelivery] = await db
-        .insert(deliveries)
-        .values({
-          eventId: event.id,
-          endpointId: endpoint.id,
-          status: "delivering",
-          attemptCount: 0,
-        })
-        .returning();
+      delivery = await db.transaction(async (tx) => {
+        const [maxRow] = await tx
+          .select({
+            maxSeq: sql<number>`COALESCE(MAX(${deliveries.sequenceNumber}), 0)`,
+          })
+          .from(deliveries)
+          .where(eq(deliveries.endpointId, endpoint.id));
 
-      if (!newDelivery) {
-        throw new Error(`Failed to create delivery record for endpoint ${endpoint.id}`);
-      }
-      delivery = newDelivery;
+        const sequenceNumber = Number(maxRow?.maxSeq ?? 0) + 1;
+
+        const [created] = await tx
+          .insert(deliveries)
+          .values({
+            eventId: event.id,
+            endpointId: endpoint.id,
+            status: "delivering",
+            sequenceNumber,
+            attemptCount: 0,
+          })
+          .returning();
+
+        return created!;
+      });
     } else {
       await db
         .update(deliveries)
@@ -95,9 +104,33 @@ export async function processDeliveryJob(
         .where(eq(deliveries.id, delivery.id));
     }
 
+    // 4. Head-of-Line (HoL) Blocking Check:
+    // Ensure no prior delivery for THIS endpoint is still pending, delivering, or retrying
+    const [blocking] = await db
+      .select({ id: deliveries.id, seq: deliveries.sequenceNumber })
+      .from(deliveries)
+      .where(
+        and(
+          eq(deliveries.endpointId, endpoint.id),
+          lt(deliveries.sequenceNumber, delivery.sequenceNumber),
+          inArray(deliveries.status, ["pending", "delivering", "retry"])
+        )
+      )
+      .limit(1);
+
+    if (blocking) {
+      // Prior event is still processing/retrying. Defer this job to maintain strict per-endpoint ordering!
+      await deliveryQueue.add(
+        "deliver",
+        { eventId: event.id, outboxId: job.data.outboxId },
+        { delay: 100 }
+      );
+      return;
+    }
+
     const currentAttemptNumber = delivery.attemptCount + 1;
 
-    // 4. Dispatch the HTTP webhook
+    // 5. Dispatch the HTTP webhook
     const result = await dispatchWebhook({
       deliveryId: delivery.id,
       url: endpoint.url,
@@ -105,6 +138,7 @@ export async function processDeliveryJob(
       payload: {
         id: event.id,
         event: event.eventType,
+        sequenceNumber: delivery.sequenceNumber,
         data: event.payload,
         createdAt: event.createdAt,
       },
