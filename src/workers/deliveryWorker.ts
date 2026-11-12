@@ -15,6 +15,8 @@ import {
   type DeliveryJobData,
 } from "../queue/deliveryQueue.js";
 import { dispatchWebhook } from "../services/dispatcher.js";
+import { rateLimiter } from "../services/rateLimiter.js";
+import { circuitBreaker } from "../services/circuitBreaker.js";
 import {
   isRetryableError,
   calculateNextRetryDelayMs,
@@ -123,7 +125,29 @@ export async function processDeliveryJob(
       return;
     }
 
-    // Now that this delivery is at the head of the line, mark as delivering
+    // 5. Circuit Breaker Check: Fail fast if endpoint is currently in OPEN state
+    const circuit = await circuitBreaker.canAttempt(endpoint.id);
+    if (!circuit.allow) {
+      await deliveryQueue.add(
+        "deliver",
+        { eventId: event.id, outboxId: job.data.outboxId },
+        { delay: 1000 }
+      );
+      return;
+    }
+
+    // 6. Token Bucket Rate Limiting: Enforce per-endpoint rate limits
+    const rateCheck = await rateLimiter.consume(endpoint.id, endpoint.rateLimit);
+    if (!rateCheck.allowed) {
+      await deliveryQueue.add(
+        "deliver",
+        { eventId: event.id, outboxId: job.data.outboxId },
+        { delay: Math.max(50, rateCheck.waitMs) }
+      );
+      return;
+    }
+
+    // Now that checks passed, mark as delivering
     await db
       .update(deliveries)
       .set({ status: "delivering" })
@@ -131,7 +155,7 @@ export async function processDeliveryJob(
 
     const currentAttemptNumber = delivery.attemptCount + 1;
 
-    // 5. Dispatch the HTTP webhook
+    // 7. Dispatch the HTTP webhook
     const result = await dispatchWebhook({
       deliveryId: delivery.id,
       url: endpoint.url,
@@ -157,8 +181,10 @@ export async function processDeliveryJob(
       error: result.error,
     });
 
-    // 6. Update the delivery record status based on retryability & attempts
+    // 8. Update delivery record & Circuit Breaker based on outcome
     if (result.outcome === "success") {
+      await circuitBreaker.recordSuccess(endpoint.id);
+
       await db
         .update(deliveries)
         .set({
@@ -172,6 +198,10 @@ export async function processDeliveryJob(
         .where(eq(deliveries.id, delivery.id));
     } else {
       const retryable = isRetryableError(result.responseCode, result.error);
+      if (retryable) {
+        await circuitBreaker.recordFailure(endpoint.id);
+      }
+
       const maxAttempts = retryConfig?.maxAttempts ?? 5;
       const isExhausted = !retryable || currentAttemptNumber >= maxAttempts;
 
