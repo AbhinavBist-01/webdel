@@ -184,14 +184,14 @@ describe("BOSS 3 FIGHT — Webhook Delivery Engine & Classification", () => {
     expect(successDelivery?.completedAt).not.toBeNull();
     expect(signatureVerified).toBe(true); // HMAC signature matched!
 
-    // Outcome B: 400 Client Error
+    // Outcome B: 400 Client Error (Permanent error -> moves immediately to exhausted / DLQ)
     const [clientErrDelivery] = await db
       .select()
       .from(deliveries)
       .where(eq(deliveries.endpointId, endpointIds["clientError"]!));
 
     expect(clientErrDelivery).toBeDefined();
-    expect(clientErrDelivery?.status).toBe("retry");
+    expect(clientErrDelivery?.status).toBe("exhausted");
     expect(clientErrDelivery?.lastResponseCode).toBe(400);
 
     // Outcome C: 500 Server Error
