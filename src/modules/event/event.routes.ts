@@ -3,6 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { events, outbox, endpoints, deliveries } from "../../db/schema.js";
 import { authenticateCustomer } from "../../middleware/auth.js";
+import { eventsIngestedTotal } from "../../observability/metrics.js";
 import { createEventSchema } from "./event.schema.js";
 
 export const eventRouter = Router();
@@ -122,6 +123,11 @@ eventRouter.post("/", async (req: Request, res: Response) => {
       isDuplicate: true,
       status: 200 as const,
     };
+  });
+
+  eventsIngestedTotal.inc({
+    event_type: parsedBody.eventType,
+    is_duplicate: String(result.isDuplicate),
   });
 
   res.status(result.status).json({

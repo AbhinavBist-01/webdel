@@ -22,6 +22,10 @@ import {
   calculateNextRetryDelayMs,
   type RetryConfig,
 } from "../services/retryScheduler.js";
+import {
+  deliveryAttemptsTotal,
+  deliveryDurationHistogram,
+} from "../observability/metrics.js";
 
 /**
  * Process a webhook delivery job for a specific event:
@@ -168,6 +172,16 @@ export async function processDeliveryJob(
         createdAt: event.createdAt,
       },
       timeoutMs,
+    });
+
+    // Record Prometheus metrics
+    deliveryDurationHistogram.observe(
+      { outcome: result.outcome },
+      result.durationMs / 1000
+    );
+    deliveryAttemptsTotal.inc({
+      outcome: result.outcome,
+      response_code: String(result.responseCode || "none"),
     });
 
     // 5. Record this attempt in delivery_attempts

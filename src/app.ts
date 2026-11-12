@@ -1,4 +1,5 @@
 import express, { type Express } from "express";
+import { register } from "./observability/metrics.js";
 import { customerRouter } from "./modules/customer/index.js";
 import { endpointRouter } from "./modules/endpoint/index.js";
 import { eventRouter } from "./modules/event/index.js";
@@ -14,6 +15,12 @@ export function createApp(): Express {
   // Healthcheck endpoint
   app.get("/health", (_req, res) => {
     res.status(200).json({ status: "ok" });
+  });
+
+  // Prometheus metrics scraping endpoint
+  app.get("/metrics", async (_req, res) => {
+    res.set("Content-Type", register.contentType);
+    res.end(await register.metrics());
   });
 
   // Mount API modules

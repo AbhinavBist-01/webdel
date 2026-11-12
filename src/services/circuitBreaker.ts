@@ -1,4 +1,5 @@
 import { redisConnection } from "../queue/redis.js";
+import { circuitBreakerTripsTotal } from "../observability/metrics.js";
 
 export type CircuitState = "CLOSED" | "OPEN" | "HALF_OPEN";
 
@@ -80,6 +81,8 @@ export class CircuitBreaker {
 
     if (failures >= this.failureThreshold) {
       // Trip circuit to OPEN
+      circuitBreakerTripsTotal.inc();
+
       await redisConnection.hmset(key, {
         state: "OPEN",
         openedAt: Date.now(),
